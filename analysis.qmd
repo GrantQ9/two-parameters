@@ -2,25 +2,71 @@
 title: "Two Parameters"
 author: "Grant Quattlebaum"
 format: html
+execute:
+  echo: false
+  warning: false
 ---
 
-## Quarto
-
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
-
-## Running Code
-
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
-
 ```{r}
-1 + 1
+#| message: false
+
+library(tidyverse)
+library(primer.data)
+library(tidybayes)
+library(brms)
+library(gtsummary)
 ```
 
-You can add options to executable code like this 
-
 ```{r}
-#| echo: false
-2 * 2
+nhanes |> filter(sex == "Male", age >= 18) |>
+  select(height) |>
+  drop_na() |>
+  ggplot(aes(x = height)) +
+  geom_histogram(bins = 50) +
+  labs(
+    title = "Male Adult Height in US from 2009-2011",
+    caption = "Source NHANES 2009-2011",
+    x = "Height",
+    y = "Count")
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+```{r}
+ch5 <- nhanes |> filter(sex == "Male", age >= 18) |>
+  select(height)
+```
+
+```{r}
+#| cache: true
+
+fit_male_height <- brm(formula = height ~ 1, data = ch5, family = gaussian(), silent = 2, refresh = 0, seed = 12)
+```
+
+```{r}
+#| label: plot
+
+fit_male_height |> 
+  add_predicted_draws(newdata = tibble(.rows = 1)) |>
+  ggplot(aes(x = .prediction)) +
+    geom_histogram(aes(y = after_stat(count/sum(count))), bins = 100) +
+    labs(
+      title = "Height Distribution of Random Adult Men",
+      subtitle = "A random man is at least 180 cm tall less than half the time",
+      x = "Height",
+      y = "Proportion",
+      caption = "Source: NHANES, 2009-2011") +
+    scale_x_continuous(labels = scales::number_format()) + 
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+```
+
+We're using height data collected in the NHANES from 2009 to 2011 to build a model for the height of adult men that can answer questions like "Given 4 random men, what would the biggest difference in their heights be on average?". Our data represents a broad cross-section of America, but changes in demographics since 2010 may limit its applicability. We modeled the height using a linear intercept-only regression with an error term in the Gaussian family. We found that average male height was 175.9 cm with a standard deviation of 7.5, though realistically this answer applies to American men: you'd likely get a different answer altogether if you surveyed men from Denmark or Japan.
+
+```{r}
+tbl_regression(fit_male_height, intercept = TRUE)
+```
+
+```{r}
+fit_male_height |> add_predicted_draws(newdata = tibble(.rows = 1)) |>
+  mutate(tall = if_else(.prediction > 180, TRUE, FALSE)) |>
+  summarize(odds = mean(tall))
+```
+
